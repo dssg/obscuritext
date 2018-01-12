@@ -2,6 +2,7 @@ import re
 import numpy as np
 import pandas as pd
 import os, errno
+import configparser
 
 # A regex pattern for replacing all of the punctuation in one pass
 replace_chars = [".", "?", "!", "\\", "(", ")", ",", "/", "*", "&", "#", "\"",
@@ -53,14 +54,14 @@ def replace_words(word_list, word_numbers):
     return replace_string
 
 
-def assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, assign):
+def assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, assign, ps, stemming):
     '''
     Loops through the uncleansed text. Depending on assign (bool), performs one of 
     two options. Either assigns ascending numbers to the unique words OR, after shuffling,
     creates a new series of cleansed text.
     INPUTS:
-        uncleansed_text (Series): the column to be cleaned
-        punctuation (bool): if punctuation should be treated as a word
+        uncleansed_text (Series): the column to be cleansed
+        punctuation (bool): if punctuation should be removed
         word_numbers (dict): to be filled on first pass with word -> number representative
             later to be used to replace words with shuffled numbers
         word_numbers_list (list of lists): same info as above
@@ -71,7 +72,6 @@ def assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numb
         Nothing on the first pass. Populates word_numbers and word_numbers_list
         cleansed_text (List of strings): the text with the shuffled numbers
     '''
-    
     if assign:
         number = 1 #Only used in the first pass
     else:    
@@ -81,10 +81,18 @@ def assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numb
         # Only performs punctuation stripping and splitting if the field is a string
         if type(text) is str:
             if punctuation:
-                post_punc = pattern.sub(r' \1 ', text)
-            else:
                 post_punc = pattern.sub("", text)
-            words_list = post_punc.lower().split()
+            else:
+                # Isolates punctuation to be treated as an individual word
+                post_punc = pattern.sub(r' \1 ', text)
+                
+            if case_sensitive:
+                words_list = post_punc.split()
+            else:
+                words_list = post_punc.lower().split()
+            
+            if stemming:
+                words_list = [ps.stem(i) for i in words_list]
         # If the field is not a string, simply sends the whole field to be numerated 
         else: 
             words_list = [text]
@@ -97,11 +105,36 @@ def assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numb
     
     if not assign:
         return cleansed_text
+
+def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, word_numbers_df):
+    '''
+    If top_thresh or bottom_thresh was set to "Ask" in the config file, shows the user the
+    head or tail of the dataset and asks for the desired count. 
+    INPUTS:
+        top_thresh (string): contains either an int or "Ask"
+        bottom_thresh (string): contains either an int or "Ask"
+    OUTPUTS:
+        top_thresh (int): the desired top threshold, as an integer
+        bottom_thresh (int): the desired bottom threshold, as an integer
+    '''
+    if top_thresh.lower() == "ask":
+        print(word_numbers_df.head(20),  "\n")
+        top_thresh = input("Combine words with counts above: ")
+    try:
+        top_thresh = int(top_thresh)
+    except ValueError:
+        print("combine_above was not a valid number. Please enter an integer")
+        
+    if bottom_thresh.lower() == "ask":
+        print("\n", word_numbers_df.tail(20), "\n")
+        bottom_thresh = input("Combine words with counts below: ")
+    try:
+        bottom_thresh = int(bottom_thresh)
+    except ValueError:
+        print("combine_below was not a valid number. Please enter an integer")
     
-def print_head_and_tail(df, num):
-    print("\n", word_numbers_df.head(num), "\n")
-    print(word_numbers_df.tail(num))
-    
+    return top_thresh, bottom_thresh
+
 
 if __name__ == "__main__":
     '''
@@ -109,24 +142,37 @@ if __name__ == "__main__":
     exporting the original file with the given column removed and with the new
     column added. Exports another csv file with the mapping of orignal words to numbers.
     '''
+    config = configparser.ConfigParser()
+    config.read('obscuritext_configs.ini')
 
-    file_name = input("Enter the name of your csv (not including extension): ")
-    column_name = input("Enter the name of the column to cleanse: ")
-    seed = int(input("Enter a seed for randomizing (int): "))
-    delete_orig = input("Would you like to delete the original column (Y/N)? ").lower() == "y"
-    punctuation = input("Would you like to treat punctuation as words (Y/N)? ").lower() == "y"    
+    #Configurations 
+    file_name = config['Data']['file_name']
+    column_name = config['Data']['column_name']
+    delete_orig = config.getboolean('Data', 'delete_column')
     
-
+    case_sensitive = config.getboolean('Processing', 'case_sensitive')
+    stemming = config.getboolean('Processing', 'stemming')
+    seed = int(config['Processing']['random_seed'])
+    punctuation = config.getboolean('Processing', 'remove_punctuation')
+    top_thresh = config['Processing']['combine_above']
+    bottom_thresh =config['Processing']['combine_below']
+    
+    if stemming:
+        from nltk.stem import PorterStemmer
+        ps = PorterStemmer()
+    else:
+        ps = None
+    
     #Contains a dictionary of uncleansed word -> [number of word, count]
     word_numbers = {}
     #Contains the same information for export to csv (using list of lists for efficiency)
     word_numbers_list = []
 
-    csv_df = pd.read_csv(file_name + ".csv")
+    csv_df = pd.read_csv(file_name + ".csv", encoding = "ISO-8859-1")
     uncleansed_text = csv_df[column_name]
 
     #The first pass through assign_or_replace_text to assign ascending numbers 
-    assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, True)
+    assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, True, ps, stemming)
     
     #Fetches the counts of the words, in order, to be filled into the word_numbers_df created below
     counts = []
@@ -134,15 +180,13 @@ if __name__ == "__main__":
         counts.append(word_numbers[word][1])
         
 
-    #Assigns the proper counts, and sorts by them, asking the user to pick upper and lower thresholds
+    #Assigns the proper counts, and sorts by them
     word_numbers_df = pd.DataFrame(word_numbers_list, columns=["Original_Word", "Number"])
     word_numbers_df["Count"] = counts
     word_numbers_df.sort_values(by = "Count", ascending=False, inplace=True)
     
-    print_head_and_tail(word_numbers_df, 12)
-    
-    top_thresh = int(input("Combine words with counts above: "))
-    bottom_thresh = int(input("Combine words with counts below: "))
+    #If the user hasn't already picked thresholds, asks for them.
+    top_thresh, bottom_thresh = get_top_and_bottom_thresholds(top_thresh, bottom_thresh, word_numbers_df)
     
     #Shuffles the numbers 
     np.random.seed(seed)
@@ -166,7 +210,7 @@ if __name__ == "__main__":
         word_numbers[getattr(row, "Original_Word")][0] = getattr(row, "Number")
     
     # Iterates back over the text, replacing the words with their shuffled numbers
-    cleansed_text = assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, False)
+    cleansed_text = assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, False, ps, stemming)
 
     csv_df["Cleansed_"+ column_name] = cleansed_text
     if delete_orig: 
@@ -181,4 +225,4 @@ if __name__ == "__main__":
     csv_df.to_csv(path + "cleansed_" + column_name + "_" + file_name + ".csv")
     word_numbers_df.to_csv( path + file_name + "_" + column_name + "_numbers.csv", index=False)
     
-    print("Finished")
+    print(len(word_numbers_df), "unique words numeralized from", len(uncleansed_text), "lines.")
