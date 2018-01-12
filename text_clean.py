@@ -5,8 +5,8 @@ import os, errno
 import configparser
 
 # A regex pattern for replacing all of the punctuation in one pass
-replace_chars = [".", "?", "!", "\\", "(", ")", ",", "/", "*", "&", "#", "\"",
-                ";", ":", "-", "_", "=", "@", "[", "]", "+", "$", "~", "'", "`", '\\\"']
+replace_chars = [".", "?", "!", "\\", "(", ")", ",", "/", "*", "&", "#", "\"", "^", 
+                ";", ":", "-", "_", "=", "@", "[", "]", "+", "$", "~", "'", "`", '\\\"', ">", "<"]
 replace_chars = set(re.escape(k) for k in replace_chars)
 pattern = re.compile("(" + "|".join(replace_chars) + ")")
 
@@ -135,6 +135,32 @@ def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, word_numbers_df):
     
     return top_thresh, bottom_thresh
 
+def export_table(output_base, column_name, case_sensitive, stemming, punctuation, top_thresh, bottom_thresh, index_num):
+    '''
+    Strings together the options to create a descriptive filename.
+    '''
+    output_name = output_base + "_" + column_name
+    
+    if case_sensitive:
+        output_name += "_Case"
+    else:
+        output_name += "_NoCase"
+        
+    if stemming:
+        output_name += "_Stem"
+    else:
+        output_name += "_NoStem"
+        
+    if punctuation:
+        output_name += "_NoPunc"
+    else:
+        output_name += "_Punc"
+        
+    output_name += "_Above" + str(top_thresh)
+    output_name += "_Below" + str(bottom_thresh)
+    
+    
+    csv_df.to_csv(path + output_name + ".csv", index= not type(index_num) is int)
 
 if __name__ == "__main__":
     '''
@@ -148,7 +174,9 @@ if __name__ == "__main__":
     #Configurations 
     file_name = config['Data']['file_name']
     column_name = config['Data']['column_name']
+    output_base = config['Data']['output_base']
     delete_orig = config.getboolean('Data', 'delete_column')
+    index_num = config['Data']['index_num']
     
     case_sensitive = config.getboolean('Processing', 'case_sensitive')
     stemming = config.getboolean('Processing', 'stemming')
@@ -162,13 +190,18 @@ if __name__ == "__main__":
         ps = PorterStemmer()
     else:
         ps = None
+        
+    try:
+        index_num = int(index_num)
+    except ValueError:
+        index_num = None
     
     #Contains a dictionary of uncleansed word -> [number of word, count]
     word_numbers = {}
     #Contains the same information for export to csv (using list of lists for efficiency)
     word_numbers_list = []
 
-    csv_df = pd.read_csv(file_name + ".csv", encoding = "ISO-8859-1")
+    csv_df = pd.read_csv(file_name + ".csv", encoding = "ISO-8859-1", index_col = index_num)
     uncleansed_text = csv_df[column_name]
 
     #The first pass through assign_or_replace_text to assign ascending numbers 
@@ -222,7 +255,9 @@ if __name__ == "__main__":
         if e.errno != errno.EEXIST:
             raise
     path = r"./cleansed_" + file_name + r"/"
-    csv_df.to_csv(path + "cleansed_" + column_name + "_" + file_name + ".csv")
+    
+    export_table(output_base, column_name, case_sensitive, stemming, punctuation, top_thresh, bottom_thresh, index_num)
+    
     word_numbers_df.to_csv( path + file_name + "_" + column_name + "_numbers.csv", index=False)
     
     print(len(word_numbers_df), "unique words numeralized from", len(uncleansed_text), "lines.")
