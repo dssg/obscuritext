@@ -4,15 +4,10 @@ import pandas as pd
 import os, errno
 import configparser
 
-# A regex pattern for replacing all of the punctuation in one pass
-replace_chars = [".", "?", "!", "\\", "(", ")", ",", "/", "*", "&", "#", "\"", "^",
-                ";", ":", "-", "_", "=", "@", "[", "]", "+", "$", "~", "'", "`", '\\\"', ">", "<"]
-replace_chars = set(re.escape(k) for k in replace_chars)
-pattern = re.compile("(" + "|".join(replace_chars) + ")")
 
 def get_nums(word_list, word_numbers, word_numbers_list, number):
     '''
-    Given a list of words from a csv cell, returns a string of cleansed words.
+    Given a list of words from a csv cell, returns a string of obscured words.
     INPUTS:
         word_list (list): the original words
         word_numbers (dict): contains parings of word -> number
@@ -35,7 +30,7 @@ def get_nums(word_list, word_numbers, word_numbers_list, number):
 
 def replace_words(word_list, word_numbers):
     '''
-    Given a list of words from a csv cell, returns a string of cleansed words.
+    Given a list of words from a csv cell, returns a string of obscured words.
     INPUTS:
         word_list (list): the unhased words
         word_numbers (dict): contains parings of word -> number
@@ -54,34 +49,38 @@ def replace_words(word_list, word_numbers):
     return replace_string
 
 
-def assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, assign, ps, stemming):
+def assign_or_replace_text(original_text, punctuation, word_numbers, word_numbers_list, assign, ps, stemming, case_sensitive):
     '''
-    Loops through the uncleansed text. Depending on assign (bool), performs one of
+    Loops through the original text. Depending on assign (bool), performs one of
     two options. Either assigns ascending numbers to the unique words OR, after shuffling,
-    creates a new series of cleansed text.
+    creates a new series of obscured text.
     INPUTS:
-        uncleansed_text (Series): the column to be cleansed
+        original_text (Series): the column to be obscured
         punctuation (bool): if punctuation should be removed
         word_numbers (dict): to be filled on first pass with word -> number representative
             later to be used to replace words with shuffled numbers
         word_numbers_list (list of lists): same info as above
         assign (bool): tells whether to run to assign numbers or to retrieve numbers
-        bottom_thresh (int): only replace the word if count above this
-        top_thresh (int): only replace the word if count below this
+        ps: PorterStemmer or none
+        case_sensitive (bool): indicates whether to be case_sensitive
+
     OUTPUTS:
         Nothing on the first pass. Populates word_numbers and word_numbers_list
-        cleansed_text (List of strings): the text with the shuffled numbers
+        obscured_text (List of strings): the text with the shuffled numbers
     '''
+    # A regex pattern for replacing all of the punctuation in one pass
+    pattern = re.compile("(" + "[^A-Za-z0-9 ]+" + ")")
+
     if assign:
         number = 1 #Only used in the first pass
     else:
-        cleansed_text = [] #Only used in the second pass
+        obscured_text = [] #Only used in the second pass
 
-    for text in uncleansed_text:
+    for text in original_text:
         # Only performs punctuation stripping and splitting if the field is a string
         if type(text) is str:
             if punctuation:
-                post_punc = pattern.sub("", text)
+                post_punc = pattern.sub(" ", text)
             else:
                 # Isolates punctuation to be treated as an individual word
                 post_punc = pattern.sub(r' \1 ', text)
@@ -101,10 +100,10 @@ def assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numb
             number = get_nums(words_list, word_numbers, word_numbers_list, number)
         else:
             replace_string = replace_words(words_list, word_numbers)
-            cleansed_text.append(replace_string)
+            obscured_text.append(replace_string)
 
     if not assign:
-        return cleansed_text
+        return obscured_text
 
 def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, word_numbers_df):
     '''
@@ -119,27 +118,30 @@ def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, word_numbers_df):
     '''
     if top_thresh.lower() == "ask":
         print(word_numbers_df.head(20),  "\n")
-        while True:
+        top_thresh = input("Combine words with counts above: ")
+    while True:
+        try:
+            top_thresh = int(top_thresh)
+            break
+        except ValueError:
+            print("combine_above was not a valid number. Please enter an integer")
             top_thresh = input("Combine words with counts above: ")
-            try:
-                top_thresh = int(top_thresh)
-                break
-            except ValueError:
-                print("combine_above was not a valid number. Please enter an integer")
 
     if bottom_thresh.lower() == "ask":
         print("\n", word_numbers_df.tail(20), "\n")
-        while True:
+        bottom_thresh = input("Combine words with counts below: ")
+    while True:
+        try:
+            bottom_thresh = int(bottom_thresh)
+            break
+        except ValueError:
+            print("combine_below was not a valid number. Please enter an integer")
             bottom_thresh = input("Combine words with counts below: ")
-            try:
-                bottom_thresh = int(bottom_thresh)
-                break
-            except ValueError:
-                print("combine_below was not a valid number. Please enter an integer")
 
     return top_thresh, bottom_thresh
 
-def export_tables(output_base, column_name, case_sensitive, stemming, punctuation, top_thresh, bottom_thresh, index_num):
+def export_tables(csv_df, word_numbers_df, output_base, column_name, case_sensitive,
+                    stemming, punctuation, top_thresh, bottom_thresh, index_num, path):
     '''
     Strings together the options to create a descriptive filename.
     '''
@@ -167,28 +169,25 @@ def export_tables(output_base, column_name, case_sensitive, stemming, punctuatio
     csv_df.to_csv(path + output_name + ".csv", index= not type(index_num) is int)
     word_numbers_df.to_csv(path + "mappings_" + output_name + ".csv", index=False)
 
-if __name__ == "__main__":
+def run_program(file_name, column_name, output_base, delete_orig, index_num, case_sensitive,
+                stemming, punctuation, seed, top_thresh, bottom_thresh):
     '''
-    Replaces the text of a given column in a csv file with randomized numbers,
-    exporting the original file with the given column removed and with the new
-    column added. Exports another csv file with the mapping of orignal words to numbers.
+    Given the configuration settings, runs the obscuration process. Can be called many times for different settings.
+    Inputs:
+        file_name (str): name of the file to obscured
+        column_name (str): name of column in file
+        output_base (str): the base name of the output files
+        delete_orig (bool): indicated whether the original column should be deleted
+        index_num (int or None): the number of the column in the original file with idecies
+        case_sensitive (bool):
+        stemming (bool): to use NLTK word stemming
+        seed (int): a random seed for the shuffling
+        punctuation (bool): to remove punctuation
+        top_thresh ("Ask" or int): combine words above this count
+        bottom_thresh ("Ask or int): combine words below this count
+    Output:
+        Nothing, but exports a two files: one with the obscured text and the other mapping original_word -> number
     '''
-    config = configparser.ConfigParser()
-    config.read('obscuritext_configs.ini')
-
-    #Configurations
-    file_name = config['Data']['file_name']
-    column_name = config['Data']['column_name']
-    output_base = config['Data']['output_base']
-    delete_orig = config.getboolean('Data', 'delete_column')
-    index_num = config['Data']['index_num']
-
-    case_sensitive = config.getboolean('Processing', 'case_sensitive')
-    stemming = config.getboolean('Processing', 'stemming')
-    seed = int(config['Processing']['random_seed'])
-    punctuation = config.getboolean('Processing', 'remove_punctuation')
-    top_thresh = config['Processing']['combine_above']
-    bottom_thresh =config['Processing']['combine_below']
 
     if stemming:
         from nltk.stem import PorterStemmer
@@ -201,16 +200,16 @@ if __name__ == "__main__":
     except ValueError:
         index_num = None
 
-    #Contains a dictionary of uncleansed word -> [number of word, count]
+    #Contains a dictionary of original word -> [number of word, count]
     word_numbers = {}
     #Contains the same information for export to csv (using list of lists for efficiency)
     word_numbers_list = []
 
     csv_df = pd.read_csv(file_name + ".csv", encoding = "ISO-8859-1", index_col = index_num)
-    uncleansed_text = csv_df[column_name]
+    original_text = csv_df[column_name]
 
     #The first pass through assign_or_replace_text to assign ascending numbers
-    assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, True, ps, stemming)
+    assign_or_replace_text(original_text, punctuation, word_numbers, word_numbers_list, True, ps, stemming, case_sensitive)
 
     #Fetches the counts of the words, in order, to be filled into the word_numbers_df created below
     counts = []
@@ -248,19 +247,71 @@ if __name__ == "__main__":
         word_numbers[getattr(row, "Original_Word")][0] = getattr(row, "Number")
 
     # Iterates back over the text, replacing the words with their shuffled numbers
-    cleansed_text = assign_or_replace_text(uncleansed_text, punctuation, word_numbers, word_numbers_list, False, ps, stemming)
+    obscured_text = assign_or_replace_text(original_text, punctuation, word_numbers, word_numbers_list, False, ps, stemming, case_sensitive)
 
-    csv_df["Cleansed_"+ column_name] = cleansed_text
+    csv_df["obscured_"+ column_name] = obscured_text
     if delete_orig:
         del csv_df[column_name]
-    # Creates a subdirectory to store the cleansed files
+    # Creates a subdirectory to store the obscured files
     try:
-        os.makedirs(r"./cleansed_" + file_name)
+        os.makedirs(r"./obscured_" + file_name)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
-    path = r"./cleansed_" + file_name + r"/"
+    path = r"./obscured_" + file_name + r"/"
 
-    export_tables(output_base, column_name, case_sensitive, stemming, punctuation, top_thresh, bottom_thresh, index_num)
+    export_tables(csv_df, word_numbers_df, output_base, column_name, case_sensitive,
+                    stemming, punctuation, top_thresh, bottom_thresh, index_num, path)
 
-    print(len(word_numbers_df), "unique words numeralized from", len(uncleansed_text), "lines.")
+    print(len(word_numbers_df), "unique words numeralized from", len(original_text),
+          "lines. Case Sensitive: " + str(case_sensitive) + ". Stemming: " + str(stemming) +
+          ". Punctuation: "+ str(punctuation))
+
+
+
+if __name__ == "__main__":
+    '''
+    Replaces the text of a given column in a csv file with randomized numbers,
+    exporting the original file with the given column removed and with the new
+    column added. Exports another csv file with the mapping of orignal words to numbers.
+    '''
+    config = configparser.ConfigParser()
+    config.read('obscuritext_configs.cfg')
+
+    #Configurations
+    file_name = config['Data']['file_name']
+    column_name = config['Data']['column_name']
+    output_base = config['Data']['output_base']
+    delete_orig = config.getboolean('Data', 'delete_column')
+    index_num = config['Data']['index_num']
+
+    case_sensitive = config['Processing']['case_sensitive'].lower()
+    stemming = config['Processing']['stemming'].lower()
+    punctuation = config['Processing']['remove_punctuation'].lower()
+    seed = int(config['Processing']['random_seed'])
+    top_thresh = config['Processing']['combine_above']
+    bottom_thresh =config['Processing']['combine_below']
+
+    options = [case_sensitive, stemming, punctuation]
+
+    affirmative = {"yes", "y", "t", "true", "1", "on"}
+    negative = {"no", "n", "f", "false", "0", "off"}
+
+    # Tests for a positive or negative answer for the three options, defaulting to both
+    for i, option in enumerate(options):
+        if option in affirmative:
+            options[i] = [True]
+        elif option in negative:
+            options[i]  = [False]
+        else:
+            options[i] = [True, False]
+
+    case_sensitive = options[0]
+
+    stemming = options[1]
+    punctuation = options[2]
+
+    for case in case_sensitive:
+        for stem in stemming:
+            for punc in punctuation:
+                run_program(file_name, column_name, output_base, delete_orig, index_num, case, stem, punc, seed, top_thresh, bottom_thresh)
