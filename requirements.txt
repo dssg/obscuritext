@@ -1,0 +1,2 @@
+###### Pip3 Requirements ######
+pandas
