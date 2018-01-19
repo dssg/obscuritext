@@ -2,10 +2,9 @@ import re
 import numpy as np
 import pandas as pd
 import os, errno
-import configparser
+import configparser, hashlib, base64
 
-
-def get_hashes(word_list, word_hashes, word_hashes_list, salt, concat_hashes):
+def get_hashes(word_list, word_hashes, word_hashes_list, salt, concat_hashes, stop_words):
     '''
     Given a list of words from a csv cell, returns a string of obscured words.
     INPUTS:
@@ -18,7 +17,10 @@ def get_hashes(word_list, word_hashes, word_hashes_list, salt, concat_hashes):
     '''
     for word in word_list:
         if word not in word_hashes:
-            to_hash = word + salt
+            if word in stop_words:
+                to_hash = "stop word hash" + salt
+            else:
+                to_hash = word + salt
             hasher = hashlib.sha1(to_hash.encode('utf-8'))
             #Hashes using SHA1 then optionally truncates to prevent too long of hashes. Removes the padding at the end.
             word_hash = base64.urlsafe_b64encode(hasher.digest()).decode("utf-8").replace("=", "")[:concat_hashes]
@@ -54,7 +56,7 @@ def replace_words(word_list, word_hashes):
 
 
 def assign_or_replace_text(original_text, punctuation, word_hashes, word_hashes_list,
-                            assign, ps, stemming, case_sensitive, salt, concat_hashes):
+                            assign, ps, stemming, case_sensitive, salt, concat_hashes, stop_words):
     '''
     Loops through the original text. Depending on assign (bool), performs one of
     two options. Either assigns hashes to the unique words OR
@@ -98,7 +100,7 @@ def assign_or_replace_text(original_text, punctuation, word_hashes, word_hashes_
             words_list = [ps.stem(i) for i in words_list]
 
         if assign:
-            get_hashes(words_list, word_hashes, word_hashes_list, salt, concat_hashes)
+            get_hashes(words_list, word_hashes, word_hashes_list, salt, concat_hashes, stop_words)
         else:
             replace_string = replace_words(words_list, word_hashes)
             obscured_text.append(replace_string)
@@ -108,36 +110,43 @@ def assign_or_replace_text(original_text, punctuation, word_hashes, word_hashes_
 
 def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, word_hashes_df):
     '''
-    If top_thresh or bottom_thresh was set to "Ask" in the config file, shows the user the
+    If top_thresh or bottom_thresh was set to "ask" in the config file, shows the user the
     head or tail of the dataset and asks for the desired count.
     INPUTS:
-        top_thresh (string): contains either an int or "Ask"
-        bottom_thresh (string): contains either an int or "Ask"
+        top_thresh (string): contains either an int, "ask", or "none"
+        bottom_thresh (string): contains either an int, "ask", or "none
     OUTPUTS:
         top_thresh (int): the desired top threshold, as an integer
         bottom_thresh (int): the desired bottom threshold, as an integer
     '''
-    if top_thresh.lower() == "ask":
-        print(word_hashes_df.head(20),  "\n")
-        top_thresh = input("Combine words with counts above: ")
-    while True:
-        try:
-            top_thresh = int(top_thresh)
-            break
-        except ValueError:
-            print("combine_above was not a valid number. Please enter an integer")
+    if top_thresh == "none":
+        top_thresh = None
+    else:
+        if top_thresh == "ask":
+            print(word_hashes_df.head(20),  "\n")
             top_thresh = input("Combine words with counts above: ")
+        while True:
+            try:
+                top_thresh = int(top_thresh)
+                break
+            except ValueError:
+                print("combine_above was not a valid number. Please enter an integer")
+                top_thresh = input("Combine words with counts above: ")
 
-    if bottom_thresh.lower() == "ask":
-        print("\n", word_hashes_df.tail(20), "\n")
-        bottom_thresh = input("Combine words with counts below: ")
-    while True:
-        try:
-            bottom_thresh = int(bottom_thresh)
-            break
-        except ValueError:
-            print("combine_below was not a valid number. Please enter an integer")
+
+    if bottom_thresh == "none":
+        bottom_thresh = None
+    else:
+        if bottom_thresh == "ask":
+            print("\n", word_hashes_df.tail(20), "\n")
             bottom_thresh = input("Combine words with counts below: ")
+        while True:
+            try:
+                bottom_thresh = int(bottom_thresh)
+                break
+            except ValueError:
+                print("combine_below was not a valid number. Please enter an integer")
+                bottom_thresh = input("Combine words with counts below: ")
 
     return top_thresh, bottom_thresh
 
@@ -171,7 +180,7 @@ def export_tables(csv_df, word_hashes_df, output_base, column_name, case_sensiti
     word_hashes_df.to_csv(path + "mappings_" + output_name + ".csv", index=False)
 
 def run_program(file_name, column_name, output_base, delete_orig, index_num, case_sensitive,
-                stemming, punctuation, salt, top_thresh, bottom_thresh, concat_hashes):
+                stemming, punctuation, salt, top_thresh, bottom_thresh, concat_hashes, stop_words):
     '''
     Given the configuration settings, runs the obscuration process. Can be called many times for different settings.
     Inputs:
@@ -198,15 +207,20 @@ def run_program(file_name, column_name, output_base, delete_orig, index_num, cas
     csv_df = pd.read_csv(file_name + ".csv", encoding = "ISO-8859-1", index_col = index_num)
     original_text = csv_df[column_name]
 
+    #Creates a set of stop_words, based on case sensitivtivity.
+    if case_sensitive:
+        stop_words = set(stop_words.split())
+    else:
+        stop_words = set(stop_words.lower().split())
+
     #The first pass through assign_or_replace_text to assign hashes
     assign_or_replace_text(original_text, punctuation, word_hashes, word_hashes_list, True,
-                            ps, stemming, case_sensitive, salt, concat_hashes)
+                            ps, stemming, case_sensitive, salt, concat_hashes, stop_words)
 
     #Fetches the counts of the words, in order, to be filled into the word_hashes_df created below
     counts = []
     for word, word_hash in word_hashes_list:
         counts.append(word_hashes[word][1])
-
 
     #Assigns the proper counts, and sorts by them
     word_hashes_df = pd.DataFrame(word_hashes_list, columns=["Original_Word", "Hash"])
@@ -218,31 +232,33 @@ def run_program(file_name, column_name, output_base, delete_orig, index_num, cas
 
 
     # Retrieves the first word's hash above the user count threshold (if it exists) and sets them all to it.
-    above_thresh_df = word_hashes_df[(word_hashes_df.Count > top_thresh)]
-    above_thresh_hashes = list(above_thresh_df.Hash)
-    if len(above_thresh_hashes) != 0:
-        above_thresh_hash = above_thresh_hashes[0]
-        word_hashes_df.loc[word_hashes_df.Count > top_thresh, 'Hash'] = above_thresh_hash
-    # Replaces the hashes in the dictionary word_hashes for those above the threshold.
-    for row in above_thresh_df.itertuples():
-        word_hashes[getattr(row, "Original_Word")][0] = getattr(row, "Hash")
+    if top_thresh != None:
+        above_thresh_df = word_hashes_df[(word_hashes_df.Count > top_thresh)]
+        above_thresh_hashes = list(above_thresh_df.Hash)
+        if len(above_thresh_hashes) != 0:
+            above_thresh_hash = above_thresh_hashes[0]
+            word_hashes_df.loc[word_hashes_df.Count > top_thresh, 'Hash'] = above_thresh_hash
+        # Replaces the hashes in the dictionary word_hashes for those above the threshold.
+        for row in above_thresh_df.itertuples():
+            word_hashes[getattr(row, "Original_Word")][0] = getattr(row, "Hash")
 
 
     # The same process for the words below the bottom threshold
-    below_thresh_df = word_hashes_df[(word_hashes_df.Count < bottom_thresh)]
-    below_thresh_hashes = list(below_thresh_df.Hash)
-    if len(below_thresh_hashes) != 0:
-        below_thresh_hash = below_thresh_hashes[0]
-        word_hashes_df.loc[word_hashes_df.Count < bottom_thresh, 'Hash'] = below_thresh_hash
-    # Replaces the hashes in the dictionary word_hashes for those below the threshold.
-    for row in below_thresh_df.itertuples():
-        word_hashes[getattr(row, "Original_Word")][0] = getattr(row, "Hash")
+    if bottom_thresh != None:
+        below_thresh_df = word_hashes_df[(word_hashes_df.Count < bottom_thresh)]
+        below_thresh_hashes = list(below_thresh_df.Hash)
+        if len(below_thresh_hashes) != 0:
+            below_thresh_hash = below_thresh_hashes[0]
+            word_hashes_df.loc[word_hashes_df.Count < bottom_thresh, 'Hash'] = below_thresh_hash
+        # Replaces the hashes in the dictionary word_hashes for those below the threshold.
+        for row in below_thresh_df.itertuples():
+            word_hashes[getattr(row, "Original_Word")][0] = getattr(row, "Hash")
 
 
     # Iterates back over the text, replacing the words with their hashes
     obscured_text = assign_or_replace_text(original_text, punctuation, word_hashes,
                                             word_hashes_list, False, ps, stemming,
-                                            case_sensitive, salt, concat_hashes)
+                                            case_sensitive, salt, concat_hashes, stop_words)
 
     csv_df["obscured_"+ column_name] = obscured_text
     if delete_orig:
@@ -285,8 +301,9 @@ if __name__ == "__main__":
     punctuation = config['Processing']['remove_punctuation'].lower()
     salt = config['Processing']['salt_string']
     concat_hashes = config['Processing']['concat_hashes']
-    top_thresh = config['Processing']['combine_above']
-    bottom_thresh =config['Processing']['combine_below']
+    top_thresh = config['Processing']['combine_above'].lower()
+    bottom_thresh = config['Processing']['combine_below'].lower()
+    stop_words = config['Processing']['stop_words']
 
     if stemming:
         from nltk.stem import PorterStemmer
@@ -294,22 +311,24 @@ if __name__ == "__main__":
     else:
         ps = None
 
+    # The column of the index in the original file
     try:
         index_num = int(index_num)
     except ValueError:
         index_num = None
 
+    # To shorten the hashes to limit file size
     try:
         concat_hashes = int(concat_hashes)
     except ValueError:
         concat_hashes = None
 
-    options = [case_sensitive, stemming, punctuation]
 
+    # Runs the program with every combination of case_sensitive, stemming, and punctuation given by the user
+    options = [case_sensitive, stemming, punctuation]
     affirmative = {"yes", "y", "t", "true", "1", "on"}
     negative = {"no", "n", "f", "false", "0", "off"}
 
-    # Tests for a positive or negative answer for the three options, defaulting to both
     for i, option in enumerate(options):
         if option in affirmative:
             options[i] = [True]
@@ -319,7 +338,6 @@ if __name__ == "__main__":
             options[i] = [True, False]
 
     case_sensitive = options[0]
-
     stemming = options[1]
     punctuation = options[2]
 
@@ -327,4 +345,4 @@ if __name__ == "__main__":
         for stem in stemming:
             for punc in punctuation:
                 run_program(file_name, column_name, output_base, delete_orig, index_num,
-                case, stem, punc, salt, top_thresh, bottom_thresh, concat_hashes)
+                case, stem, punc, salt, top_thresh, bottom_thresh, concat_hashes, stop_words)
