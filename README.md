@@ -12,16 +12,16 @@ The script uses the following packages for Python3:
 
 
 ## Configurations
-- file_name: The name of the CSV file without its extension:
-- output_base: The base output name for the cleansed file:
-- column_name: The name of the column to cleanse
+- file_name: The name of the CSV file without its extension
+- output_base: The base output name for the cleansed file
+- column_names: The names of the columns to cleanse, separated by a space
 - delete_column: Delete the original column in the output file? (Yes/No)
 - index_num: The number (starting with 0) of the index column. 'None' if not present
 - case_sensitive: Run as case sensitive? (Yes, No, or Both)
 - stemming: Use stemming, which requires importing NLTK? (Yes, No, or Both)
 - remove_punctuation: Remove punctuation (Yes, No, or Both)? Selecting 'No' will treat punctuation as words themselves.
 - salt_string: A string to be used as a salt during hashing
-- concat_hashes: How many characters to which to concatenate the hashes. (Int or None)
+- concat_hashes: How many characters to which to concatenate the hashes (Int or None)
 - combine_above: Combine words with counts above (an integer or 'Ask)
 - combine_below: Combine words with counts below (an integer or 'Ask')
 - stop_words: Custom stop words that the user can enter
