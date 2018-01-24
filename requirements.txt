@@ -1,2 +1,3 @@
 ###### Pip3 Requirements ######
 pandas
+nltk

@@ -7,7 +7,6 @@ The text to be obscured should be stored in a named column in a CSV file. This f
 To run, use: python3 text_obscure.py
 
 The script uses the following packages for Python3:
-- numpy
 - pandas
 - NLTK
 
@@ -24,4 +23,7 @@ The script uses the following packages for Python3:
 - salt_string: A string to be used as a salt during hashing
 - concat_hashes: How many characters to which to concatenate the hashes. (Int or None)
 - combine_above: Combine words with counts above (an integer or 'Ask)
-- combine_below = 1: Combine words with counts below (an integer or 'Ask')
+- combine_below: Combine words with counts below (an integer or 'Ask')
+- stop_words: Custom stop words that the user can enter
+- stop_above_words: If encoding new data with the same encoding as prior data, fill with the "Stop words above threshold: " exported from the original encoding.
+- stop_below_words: If encoding new data with the same encoding as prior data, fill with the "Stop words below threshold: " exported from the original encoding.
