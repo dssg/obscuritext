@@ -1,12 +1,17 @@
 import re
+import os
+import errno
+import hashlib
+import base64
+from configparser import ConfigParser
+from itertools import product
+
 import numpy as np
 import pandas as pd
-import os, errno
-import configparser, hashlib, base64
 
 def hash_word(word, salt, concat_hashes, stop_words, stop_word_hash, stop_above_hash,
               stop_below_hash, stop_above_words, stop_below_words):
-    '''
+    """
     Hashes the word with a custom salt. If the word is in one of three sets of stop words, it returns
     a pre-hashed value, improving performance.
     INPUTS:
@@ -23,7 +28,7 @@ def hash_word(word, salt, concat_hashes, stop_words, stop_word_hash, stop_above_
             to encode new data
     OUTPUT:
         the hash value for word
-    '''
+    """
     if word in stop_above_words:
         return stop_above_hash
     elif word in stop_below_words:
@@ -38,14 +43,14 @@ def hash_word(word, salt, concat_hashes, stop_words, stop_word_hash, stop_above_
     return base64.urlsafe_b64encode(hasher.digest()).decode("utf-8").replace("=", "")[:concat_hashes]
 
 def replace_words(entry_words, words_dict):
-    '''
+    """
     Given a list of words from a csv cell, returns a string of obscured words.
     INPUTS:
         entry_words (list): the unhased words
         words_dict (dict): maps original word -> [hash, count]
     OUTPUT:
         return_string (string): the string of hashes to stand in for the original words
-    '''
+    """
     replace_string = ""
     for word in entry_words:
         word_hash = words_dict[word][0]
@@ -57,7 +62,7 @@ def replace_words(entry_words, words_dict):
 def assign_or_replace_text(assign, original_text, punctuation, words_dict, words_list,
                             ps, stemming, case_sensitive, salt, concat_hashes, stop_words,
                             stop_word_hash, stop_above_hash, stop_below_hash, stop_above_words, stop_below_words):
-    '''
+    """
     Loops through the original text. Depending on assign (bool), performs one of
     two options: Either assigns hashes to the unique words OR
     creates a new series of obscured text.
@@ -74,7 +79,7 @@ def assign_or_replace_text(assign, original_text, punctuation, words_dict, words
     OUTPUTS:
         First Pass: Nothing, but populates words_dict and words_list
         Second Pass: obscured_text (List of strings): the text replaced with hashes
-    '''
+    """
     # A regex pattern for replacing all of the punctuation in one pass
     pattern = re.compile("(" + "[^A-Za-z0-9 ]+" + ")")
 
@@ -123,7 +128,7 @@ def assign_or_replace_text(assign, original_text, punctuation, words_dict, words
         return obscured_text
 
 def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, words_df):
-    '''
+    """
     If top_thresh or bottom_thresh was set to "ask" in the config file, shows the user the
     head or tail of the dataset and asks for the desired count. If not, then returns the integer of
     the user's thresholds or None.
@@ -133,7 +138,7 @@ def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, words_df):
     OUTPUTS:
         top_thresh (int or None): the desired top threshold, as an integer
         bottom_thresh (int or None): the desired bottom threshold, as an integer
-    '''
+    """
     if top_thresh == "none":
         top_thresh = None
     else:
@@ -168,10 +173,10 @@ def get_top_and_bottom_thresholds(top_thresh, bottom_thresh, words_df):
 def export_tables(csv_df, words_df, output_base, column_names, case_sensitive,
                     stemming, punctuation, top_thresh, bottom_thresh, index_num, path,
                     salt, stop_words, stop_above_words, stop_below_words, concat_hashes):
-    '''
+    """
     Strings together the options to create a descriptive filename. Also exports the text file containing the
     three sets of stop words, which is necessary for encoding new data with the same encodings as an original set
-    '''
+    """
     output_name = output_base + "_" + "+".join(column_names)
 
     output_name += "_Salt=" + salt
@@ -211,7 +216,7 @@ def export_tables(csv_df, words_df, output_base, column_names, case_sensitive,
 def run_program(file_name, column_names, output_base, delete_orig, index_num, case_sensitive,
                 stemming, punctuation, salt, top_thresh, bottom_thresh, concat_hashes, stop_words,
                 stop_above_words, stop_below_words):
-    '''
+    """
     Given the configuration settings, runs the obscuration process. Can be called many times for different settings.
     Inputs:
         file_name (str): name of the file to obscured
@@ -233,7 +238,7 @@ def run_program(file_name, column_names, output_base, delete_orig, index_num, ca
     Output:
         Nothing, but exports three files: one with the obscured text, one mapping original_word -> hash, and a
             text file with the three sets of stop words.
-    '''
+    """
     #Contains a dictionary of original word -> [hash of word, count]
     words_dict = {}
     #Contains the same information for export to csv (using list of lists for efficiency)
@@ -332,13 +337,13 @@ def run_program(file_name, column_names, output_base, delete_orig, index_num, ca
           ". Punctuation: "+ str(punctuation))
 
 if __name__ == "__main__":
-    '''
+    """
     Replaces the text of a given column in a csv file with hashes,
     exporting the original file with the given column removed and with the new
-    column added. Exports another csv file with the mapping of orignal words to hashes
+    column added. Also exports another csv file with the mapping of orignal words to hashes
     and a text file with the stop words used.
-    '''
-    config = configparser.ConfigParser()
+    """
+    config = ConfigParser()
     config.read('obscuritext_configs.cfg')
 
     #Configurations
@@ -401,9 +406,7 @@ if __name__ == "__main__":
     stemming = options[1]
     punctuation = options[2]
 
-    for case in case_sensitive:
-        for stem in stemming:
-            for punc in punctuation:
-                run_program(file_name, column_names, output_base, delete_orig, index_num,
-                case, stem, punc, salt, top_thresh, bottom_thresh, concat_hashes, stop_words,
-                            stop_above_words, stop_below_words)
+    for case, stem, punc in product(case_sensitive, stemming, punctuation):
+        run_program(file_name, column_names, output_base, delete_orig, index_num,
+                    case, stem, punc, salt, top_thresh, bottom_thresh, concat_hashes,
+                    stop_words, stop_above_words, stop_below_words)
