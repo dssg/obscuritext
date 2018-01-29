@@ -1,6 +1,15 @@
 # obscuritext
 A Python script to obscure free text into anonymized data by hashing each word. These hashes can still be used for statistical modeling but have no identifying information and are completely unreadable.
 
+## Usage
+To run the obscuration process:
+- Download the following files from this repository: Dockerfile, obscuritext_configs.cfg, and run_in_docker.sh
+- Using the Dockerfile, build an image and run it with the -d flag for detached. Find the container id of the running container and copy it.
+- Place your csv file to obscure in a directory with the downloaded obscuritext_configs.cfg and run_in_docker.sh
+- Edit the obscuritext_configs.cfg to reflect your desired configuration options. Leave the name as "obscuritext_configs.cfg".
+- On the command line, run: ./run_in_docker.sh <csv file name without extension> <container ID>
+- The files will be copied into the docker, obscured, and the results returned in a subdirectory.
+
 ## Requirements
 The text to be obscured should be stored in a named column in a CSV file. This file should be stored in the same directory as the script file.
 
