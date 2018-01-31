@@ -4,10 +4,12 @@ A Python script to transform free text into de-identified data by hashing each w
 ## Usage
 To run the obscuring process:
 - Download the following files from this repository: Dockerfile, obscuritext_configs.cfg, and run_in_docker.sh
-- Using the Dockerfile, build an image and run it with the -d flag for detached. Find the container id (using `docker ps -a`) of the running container and copy it.
+- Place the Dockerfile in a folder, build an image using `docker build (name of folder) -t (name):(tag)" ] `.
+- Note the image ID or find it with `docker images`. Run it using `docker run -it -d (image ID)`.
+- Find the running container id using `docker ps -a`. Copy it.
 - Place your csv file to obscure in a directory with the downloaded obscuritext_configs.cfg and run_in_docker.sh
 - Edit the obscuritext_configs.cfg to reflect your desired configuration options. Leave the name as "obscuritext_configs.cfg".
-- On the command line, run: ./run_in_docker.sh [csv file name without extension] [container ID] in that directory
+- On the command line, run: `./run_in_docker.sh [csv file name without extension] [container ID]` in that directory
 - The files will be copied into the docker, obscured, and returned in a new subdirectory called "obscured_[original file name]"
 
 ## Requirements
