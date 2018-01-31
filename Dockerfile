@@ -4,13 +4,12 @@ ENV SHELL="/bin/bash"
 
 RUN apt-get update && \
     apt-get install -y git \
-                       wget \
-                       python3-pip \
-                       vim
+                       python3-pip
+                       wget
 
-RUN wget https://github.com/dssg/obscuritext/archive/develop.tar.gz && \
-    tar zxvf develop.tar.gz
+RUN wget https://api.github.com/repos/dssg/obscuritext/tarball/b818152e99679fbb0830fe20223f1a9f29ea1d88 | \
+    tar -zxf -
 
-WORKDIR /obscuritext-develop
+WORKDIR /dssg-obscuritext-b818152
 
 RUN pip3 install -r requirements.txt
