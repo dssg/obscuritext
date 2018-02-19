@@ -1,0 +1,3 @@
+###### Pip3 Requirements ######
+pandas==0.20.3
+nltk==3.2.5
